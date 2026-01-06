@@ -1,4 +1,4 @@
-# 이탁우 Tetris
+# Tetris
 
 웹 브라우저에서 즐길 수 있는 클래식 테트리스 게임입니다. HTML5 Canvas와 JavaScript를 사용하여 구현되었으며, 모바일과 PC 환경 모두 지원합니다.
 
