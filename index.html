@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>이탁우 Tetris</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="intro-overlay">
+        <div id="start-prompt">Click to Start</div>
+        <div class="intro-logo hidden" id="intro-logo">TETRIS</div>
+    </div>
+    <div class="game-wrapper">
+        <div class="game-left-sidebar">
+            <div class="hold-container">
+                <p>Hold</p>
+                <canvas id="hold" width="100" height="100"></canvas>
+            </div>
+            <div class="controls" onclick="toggleControlsHelp()" style="cursor: pointer;">
+                <p style="margin-bottom: 5px;">Controls <span id="ctrl-arrow">▼</span></p>
+                <div id="controls-list">
+                    <p>&#8592; / &#8594; : Move</p>
+                    <p>&#8595; : Drop</p>
+                    <p>Q / W / &#8593; : Rotate</p>
+                    <p>Space / Enter : Hard Drop</p>
+                    <p>Shift / C : Hold</p>
+                </div>
+            </div>
+            <button id="ghost-btn" onclick="toggleGhost()">Ghost: ON</button>
+            <button id="controls-mode-btn" onclick="toggleControlsMode()">Controls: PC</button>
+        </div>
+        <div class="game-main">
+            <h1 id="game-title" style="opacity: 0;">Tetris</h1>
+            <div class="canvas-wrapper">
+                <canvas id="tetris" width="240" height="400"></canvas>
+                <div id="game-over" class="hidden">
+                    <h2>Game Over</h2>
+                    <button onclick="resetGame()">Restart</button>
+                </div>
+            </div>
+        </div>
+        <div class="game-sidebar">
+            <div class="stats-row">
+                <div class="timer-container">
+                    <p>Time</p>
+                    <div id="timer">00:00</div>
+                </div>
+                <div class="score-container">
+                    <p>Score</p>
+                    <div id="score">0</div>
+                </div>
+                <div class="lines-container">
+                    <p>Lines</p>
+                    <div id="lines">0</div>
+                </div>
+            </div>
+            <div class="next-container">
+                <p>Next</p>
+                <canvas id="next" width="100" height="350"></canvas>
+            </div>
+        </div>
+    </div>
+    <div id="mobile-controls" class="hidden">
+        <div class="control-row">
+            <button class="control-btn" id="btn-hold">Hold</button>
+            <button class="control-btn" id="btn-rotate">Rot</button>
+            <button class="control-btn" id="btn-hard-drop">Drop</button>
+        </div>
+        <div class="control-row">
+            <button class="control-btn" id="btn-left">←</button>
+            <button class="control-btn" id="btn-down">↓</button>
+            <button class="control-btn" id="btn-right">→</button>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
