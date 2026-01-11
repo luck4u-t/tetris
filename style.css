@@ -1,53 +1,84 @@
 body {
-    background: #000;
+    background-color: #202028;
     color: #fff;
-    font-family: sans-serif;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
     display: flex;
     justify-content: center;
     align-items: center;
     min-height: 100vh;
-    margin: 0;
-    overflow: hidden; /* Prevent scroll bars if animation goes out */
+    touch-action: none; /* Prevent scrolling on mobile while dragging */
 }
 
-.game-wrapper {
-    display: flex;
-    gap: 20px;
-    align-items: flex-start;
-}
-
-.game-main {
+.game-container {
     display: flex;
     flex-direction: column;
     align-items: center;
+    gap: 20px;
+    padding: 20px;
+    max-width: 400px;
+    width: 100%;
+}
+
+header {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
 }
 
 h1 {
-    margin: 0 0 10px 0;
-    font-size: 2em;
+    margin: 0;
+    color: #FFD700;
+    text-shadow: 2px 2px #ff5722;
+    font-size: 2.5rem;
 }
 
-canvas {
-    border: 2px solid #fff;
-    background-color: #000;
-    box-shadow: 0 0 20px rgba(0,0,0,0.5);
+.score-board {
+    display: flex;
+    gap: 20px;
+    width: 100%;
+    justify-content: center;
+}
+
+.score-box {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 10px 20px;
+    border-radius: 10px;
+    text-align: center;
+    min-width: 80px;
+    border: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.score-box .label {
     display: block;
+    font-size: 0.8rem;
+    color: #aaa;
+    margin-bottom: 5px;
+    text-transform: uppercase;
 }
 
-#tetris {
-    /* Grid Pattern: 1px lines every 20px */
-    background-image:
-        linear-gradient(#444 1px, transparent 1px),
-        linear-gradient(90deg, #444 1px, transparent 1px);
-    background-size: 20px 20px;
-    background-position: -1px -1px; /* Align grid lines */
+#score, #best-score {
+    font-size: 1.5rem;
+    font-weight: bold;
 }
 
-.canvas-wrapper {
+.game-area {
     position: relative;
+    padding: 10px;
+    background: #2b2b36;
+    border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
 }
 
-#game-over {
+#game-grid {
+    background-color: #1a1a20;
+    border-radius: 4px;
+    display: block; /* Remove canvas bottom gap */
+}
+
+#game-over-overlay {
     position: absolute;
     top: 0;
     left: 0;
@@ -58,238 +89,76 @@ canvas {
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    z-index: 10;
-}
-
-#game-over.hidden {
-    display: none;
-}
-
-#game-over h2 {
-    font-size: 2em;
-    color: #FF0D0D;
-    text-shadow: 0 0 10px #FF0D0D;
-    margin-bottom: 20px;
-}
-
-#intro-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: #000;
-    display: flex;
-    justify-content: center;
-    align-items: center;
+    border-radius: 10px;
     z-index: 100;
-    transition: background 1s ease-out;
 }
 
-.intro-logo {
-    font-size: 5em;
-    font-weight: bold;
-    color: #fff;
-    text-shadow:
-        2px 2px 0 #FF0D0D,
-        4px 4px 0 #0DC2FF,
-        6px 6px 0 #0DFF72;
-    transition: all 1s ease-in-out;
-    position: absolute; /* Allow movement */
-}
-
-.logo-hidden {
-    opacity: 0;
-    pointer-events: none;
-}
-
-.intro-logo.hidden {
+#game-over-overlay.hidden {
     display: none;
 }
 
-#start-prompt {
-    font-size: 2em;
-    animation: blink 1s infinite;
+#game-over-overlay h2 {
+    font-size: 2.5rem;
+    color: #ff4757;
+    margin-bottom: 10px;
 }
 
-@keyframes blink {
-    50% { opacity: 0; }
-}
-
-.game-sidebar, .game-left-sidebar {
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-    padding-top: 50px;
-    flex: 1; /* Distribute space evenly */
-    min-width: 120px; /* Ensure minimum width */
-    align-items: center;
-}
-
-/* Ensure center is strictly sized */
-.game-main {
-    flex: 0 0 auto;
-}
-
-.stats-row {
-    display: flex;
-    flex-direction: row;
-    justify-content: space-between;
-    gap: 10px;
-    width: 100%;
-}
-
-/* Individual stat boxes inside the row should be compact */
-.score-container, .timer-container, .lines-container {
-    flex: 1;
-    text-align: center;
-    background: rgba(255, 255, 255, 0.1);
-    padding: 10px 5px; /* Reduced padding */
-    border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-}
-
-.next-container, .hold-container, .controls {
-    text-align: center;
-    background: rgba(255, 255, 255, 0.1);
-    padding: 15px;
-    border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-}
-
-.score-container p, .next-container p, .hold-container p, .timer-container p, .lines-container p {
-    margin: 0 0 5px 0;
-    font-size: 0.8em; /* Slightly smaller labels */
-    font-weight: bold;
-    color: #ccc;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-}
-
-#score, #timer, #lines {
-    font-size: 1.2em; /* Smaller values to fit in row */
-    font-weight: bold;
-    color: #fff;
-    text-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
-}
-
-#next {
-    width: 100px;
-    height: 350px;
-    margin-top: 5px;
-}
-
-#hold {
-    width: 100px;
-    height: 100px;
-    margin-top: 5px;
-}
-
-.controls {
-    font-size: 0.85em;
-    color: #ddd;
-    line-height: 1.8;
-    text-align: left; /* Keep controls text left-aligned for readability */
-}
-
-.controls p {
-    margin: 2px 0;
-}
-
-.controls-header {
-    font-weight: bold;
-    color: #fff;
-    margin-bottom: 5px;
-}
-
-#controls-list.hidden {
-    display: none;
+#game-over-overlay p {
+    font-size: 1.5rem;
+    margin-bottom: 30px;
 }
 
 button {
-    background: #0DFF72;
+    background: #2ed573;
+    color: white;
     border: none;
-    color: #000;
-    padding: 10px 20px;
-    font-size: 0.8em;
-    font-weight: bold;
+    padding: 12px 30px;
+    font-size: 1.2rem;
+    border-radius: 30px;
     cursor: pointer;
-    border-radius: 5px;
-    margin-top: 10px;
+    transition: transform 0.1s, background 0.2s;
+    font-weight: bold;
 }
 
 button:hover {
-    background: #0DC2FF;
+    background: #26af61;
+    transform: scale(1.05);
 }
 
-/* Mobile Controls */
-#mobile-controls {
-    position: fixed;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 90%;
-    max-width: 400px;
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
-    z-index: 200;
-}
-
-#mobile-controls.hidden {
-    display: none;
-}
-
-.control-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
-}
-
-.control-btn {
-    flex: 1;
-    background: rgba(255, 255, 255, 0.2);
-    border: 2px solid rgba(255, 255, 255, 0.4);
-    color: #fff;
-    font-size: 1.2em;
-    padding: 20px 0;
-    border-radius: 10px;
-    touch-action: manipulation; /* Improves touch response */
-    user-select: none;
-    -webkit-user-select: none;
-}
-
-.control-btn:active {
-    background: rgba(255, 255, 255, 0.5);
+button:active {
     transform: scale(0.95);
 }
 
-@media (max-width: 600px) {
-    .game-wrapper {
-        flex-direction: column;
-        align-items: center;
-        scale: 0.8;
-    }
+.block-tray {
+    display: flex;
+    justify-content: space-between;
+    width: 100%; /* Match game area width */
+    max-width: 340px; /* 320 grid + padding */
+    height: 100px;
+    gap: 10px;
+}
 
-    .game-sidebar, .game-left-sidebar {
-        flex-direction: row;
-        flex-wrap: wrap;
-        justify-content: center;
-        width: 100%;
-    }
+.tray-slot {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+}
 
-    .hold-container, .next-container, .score-container, .lines-container, .timer-container {
-        margin: 5px;
-    }
+.tray-slot canvas {
+    /* To ensure they fit nicely */
+    max-width: 100%;
+    max-height: 100%;
+}
 
-    /* Hide keyboard controls text on mobile */
-    .controls {
-        display: none;
-    }
+/* For dragging visual feedback if we use a separate element,
+   but we might just render on main canvas or use a floating canvas.
+   If using a floating canvas/div: */
+.dragging-proxy {
+    position: fixed;
+    pointer-events: none;
+    z-index: 1000;
+    opacity: 0.8;
 }

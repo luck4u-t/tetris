@@ -1,838 +1,588 @@
-const canvas = document.getElementById('tetris');
-const context = canvas.getContext('2d');
-const nextCanvas = document.getElementById('next');
-const nextContext = nextCanvas.getContext('2d');
-const holdCanvas = document.getElementById('hold');
-const holdContext = holdCanvas.getContext('2d');
+// Game Constants
+const GRID_SIZE = 8;
+const CELL_SIZE = 40; // 320 / 8
+const GRID_WIDTH = 320;
+const GRID_HEIGHT = 320;
 
-context.scale(20, 20);
-nextContext.scale(20, 20);
-holdContext.scale(20, 20);
-
-const colors = [
-    null,
-    '#FF0D0D', // I - Red
-    '#FFE138', // L - Yellow
-    '#0DFF72', // J - Green
-    '#FF8E0D', // O - Orange
-    '#F538FF', // Z - Purple
-    '#0DC2FF', // S - Cyan
-    '#3877FF', // T - Blue
+// Colors
+const COLORS = [
+    '#FF0D0D', // Red
+    '#FFE138', // Yellow
+    '#0DFF72', // Green
+    '#FF8E0D', // Orange
+    '#F538FF', // Purple
+    '#0DC2FF', // Cyan
+    '#3877FF', // Blue
+    '#FF5722', // Deep Orange
 ];
 
-let sweepRows = [];
-let isSweeping = false;
-let startTime = 0;
-let timerInterval = null;
+const BG_COLOR = '#1a1a20';
+const EMPTY_CELL_COLOR = '#26262f';
 
-function updateTimer() {
-    const elapsed = Date.now() - startTime;
-    const minutes = Math.floor(elapsed / 60000).toString().padStart(2, '0');
-    const seconds = Math.floor((elapsed % 60000) / 1000).toString().padStart(2, '0');
-    const timerElement = document.getElementById('timer');
-    if (timerElement) {
-        timerElement.innerText = `${minutes}:${seconds}`;
+// Shapes Definition
+// Represented as arrays of [row, col] coordinates relative to top-left (0,0)
+const SHAPES = [
+    // Single
+    { coords: [[0, 0]], color: 0 },
+    // 2-line
+    { coords: [[0, 0], [0, 1]], color: 1 }, // H
+    { coords: [[0, 0], [1, 0]], color: 1 }, // V
+    // 3-line
+    { coords: [[0, 0], [0, 1], [0, 2]], color: 2 }, // H
+    { coords: [[0, 0], [1, 0], [2, 0]], color: 2 }, // V
+    // 4-line
+    { coords: [[0, 0], [0, 1], [0, 2], [0, 3]], color: 3 }, // H
+    { coords: [[0, 0], [1, 0], [2, 0], [3, 0]], color: 3 }, // V
+    // 5-line
+    { coords: [[0, 0], [0, 1], [0, 2], [0, 3], [0, 4]], color: 4 }, // H
+    { coords: [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0]], color: 4 }, // V
+    // Square 2x2
+    { coords: [[0, 0], [0, 1], [1, 0], [1, 1]], color: 5 },
+    // Square 3x3
+    { coords: [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2], [2, 0], [2, 1], [2, 2]], color: 6 },
+    // L-shapes (Small 2x2 bounding box)
+    { coords: [[0, 0], [1, 0], [1, 1]], color: 7 }, // L bottom-right
+    { coords: [[0, 1], [1, 0], [1, 1]], color: 7 }, // L bottom-left (flipped)
+    { coords: [[0, 0], [0, 1], [1, 0]], color: 7 }, // L top-left
+    { coords: [[0, 0], [0, 1], [1, 1]], color: 7 }, // L top-right
+    // T-shapes
+    { coords: [[0, 1], [1, 0], [1, 1], [1, 2]], color: 5 }, // T up
+    { coords: [[0, 0], [0, 1], [0, 2], [1, 1]], color: 5 }, // T down
+    // Z-shapes / S-shapes (3x2)
+    { coords: [[0, 0], [0, 1], [1, 1], [1, 2]], color: 4 },
+    { coords: [[0, 1], [0, 2], [1, 0], [1, 1]], color: 4 }
+];
+
+// Game State
+let grid = []; // 8x8 array
+let score = 0;
+let bestScore = localStorage.getItem('blockBlastBestScore') || 0;
+let trayBlocks = [null, null, null]; // The 3 current blocks
+let draggingBlock = null; // { index: 0-2, shape: {}, offsetX: 0, offsetY: 0, startX: 0, startY: 0 }
+let mousePos = { x: 0, y: 0 };
+
+// DOM Elements
+const canvas = document.getElementById('game-grid');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+const bestScoreEl = document.getElementById('best-score');
+const trayCanvases = [
+    document.getElementById('tray-1'),
+    document.getElementById('tray-2'),
+    document.getElementById('tray-3')
+];
+const trayCtxs = trayCanvases.map(c => c.getContext('2d'));
+const gameOverOverlay = document.getElementById('game-over-overlay');
+const finalScoreEl = document.getElementById('final-score');
+const restartBtn = document.getElementById('restart-btn');
+
+// Initialization
+function init() {
+    // Init Grid
+    grid = Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(0));
+    score = 0;
+    updateScoreUI();
+    bestScoreEl.innerText = bestScore;
+    gameOverOverlay.classList.add('hidden');
+
+    // Generate initial blocks
+    spawnBlocks();
+
+    // Start Loop
+    requestAnimationFrame(gameLoop);
+}
+
+function updateScoreUI() {
+    scoreEl.innerText = score;
+    if (score > bestScore) {
+        bestScore = score;
+        localStorage.setItem('blockBlastBestScore', bestScore);
+        bestScoreEl.innerText = bestScore;
     }
 }
 
-function startTimer() {
-    if (timerInterval) clearInterval(timerInterval);
-    startTime = Date.now();
-    timerInterval = setInterval(updateTimer, 1000);
-}
-
-function stopTimer() {
-    if (timerInterval) clearInterval(timerInterval);
-}
-
-function arenaSweep() {
-    let rowsToClear = [];
-    outer: for (let y = arena.length - 1; y > 0; --y) {
-        for (let x = 0; x < arena[y].length; ++x) {
-            if (arena[y][x] === 0) {
-                continue outer;
-            }
-        }
-        rowsToClear.push(y);
+function spawnBlocks() {
+    for (let i = 0; i < 3; i++) {
+        const randomShape = SHAPES[Math.floor(Math.random() * SHAPES.length)];
+        // Deep copy coords to avoid modifying reference if we implemented rotation later (not needed now but good practice)
+        trayBlocks[i] = {
+            coords: JSON.parse(JSON.stringify(randomShape.coords)),
+            color: COLORS[randomShape.color % COLORS.length],
+            id: i
+        };
     }
-
-    if (rowsToClear.length > 0) {
-        sweepRows = rowsToClear;
-        isSweeping = true;
-        playSound('clear');
-
-        // Wait 800ms before clearing (Extended delay as requested)
-        setTimeout(() => {
-            finalizeSweep(rowsToClear);
-        }, 800);
-    }
+    drawTray();
+    checkGameOver();
 }
 
-function finalizeSweep(rows) {
-    let rowCount = 1;
-    // Sort ascending to remove from top first if we rely on constant index unshift
-    // Actually, simply processing from TOP to BOTTOM is safest when unshifting at TOP.
-    // Top rows have lower indices.
-    // Example: Remove 1 and 2.
-    // Remove 1. Unshift at 0. Old 2 moves to 3? No, old 2 was at 2.
-    // Unshift shifts everything down.
-    // So old 2 moves to 3.
-    // So we must adjust or process carefully.
-
-    // Simplest robust method:
-    // Remove all rows by index, then add that many new rows.
-    // But rows.forEach does it one by one.
-
-    // Correct logic with splice+unshift one-by-one:
-    // Sort Ascending (a-b).
-    // y=1. Splice 1. Arena shrinks. Unshift 0. Arena grows.
-    // Row at 2 (target) is now at 2 (because unshift pushes it back).
-    // So Ascending order works perfectly with splice+unshift pair.
-
-    rows.sort((a, b) => a - b);
-
-    rows.forEach(y => {
-        const row = arena.splice(y, 1)[0];
-        arena.unshift(row.fill(0));
-        player.score += rowCount * 10;
-        rowCount *= 2;
-        player.lines++;
-    });
-
-    sweepRows = [];
-    isSweeping = false;
-    updateScore();
-    updateLines();
-}
-
-function updateLines() {
-    const linesElement = document.getElementById('lines');
-    if (linesElement) {
-        linesElement.innerText = player.lines;
-    }
-}
-
-function collide(arena, player) {
-    const m = player.matrix;
-    const o = player.pos;
-    for (let y = 0; y < m.length; ++y) {
-        for (let x = 0; x < m[y].length; ++x) {
-            if (m[y][x] !== 0 &&
-               (arena[y + o.y] &&
-                arena[y + o.y][x + o.x]) !== 0) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-function createMatrix(w, h) {
-    const matrix = [];
-    while (h--) {
-        matrix.push(new Array(w).fill(0));
-    }
-    return matrix;
-}
-
-function createPiece(type) {
-    if (type === 'I') {
-        return [
-            [0, 1, 0, 0],
-            [0, 1, 0, 0],
-            [0, 1, 0, 0],
-            [0, 1, 0, 0],
-        ];
-    } else if (type === 'L') {
-        return [
-            [0, 2, 0],
-            [0, 2, 0],
-            [0, 2, 2],
-        ];
-    } else if (type === 'J') {
-        return [
-            [0, 3, 0],
-            [0, 3, 0],
-            [3, 3, 0],
-        ];
-    } else if (type === 'O') {
-        return [
-            [4, 4],
-            [4, 4],
-        ];
-    } else if (type === 'Z') {
-        return [
-            [5, 5, 0],
-            [0, 5, 5],
-            [0, 0, 0],
-        ];
-    } else if (type === 'S') {
-        return [
-            [0, 6, 6],
-            [6, 6, 0],
-            [0, 0, 0],
-        ];
-    } else if (type === 'T') {
-        return [
-            [0, 7, 0],
-            [7, 7, 7],
-            [0, 0, 0],
-        ];
-    }
-}
-
-// Pre-render block images
-const blockImages = {};
-function createBlockImage(color) {
-    const canvas = document.createElement('canvas');
-    canvas.width = 20;
-    canvas.height = 20;
-    const ctx = canvas.getContext('2d');
-
-    // Base color
-    ctx.fillStyle = color;
-    ctx.fillRect(0, 0, 20, 20);
-
-    // Bevel effect (Lighting)
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+function drawRoundedRect(ctx, x, y, width, height, radius, fillStyle, strokeStyle) {
     ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(20, 0);
-    ctx.lineTo(16, 4);
-    ctx.lineTo(4, 4);
-    ctx.lineTo(4, 16);
-    ctx.lineTo(0, 20);
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    ctx.lineTo(x + radius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
     ctx.closePath();
-    ctx.fill();
-
-    // Bevel effect (Shadow)
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
-    ctx.beginPath();
-    ctx.moveTo(20, 0);
-    ctx.lineTo(20, 20);
-    ctx.lineTo(0, 20);
-    ctx.lineTo(4, 16);
-    ctx.lineTo(16, 16);
-    ctx.lineTo(16, 4);
-    ctx.closePath();
-    ctx.fill();
-
-    // Inner border for definition
-    ctx.strokeStyle = 'rgba(0,0,0,0.1)';
-    ctx.strokeRect(0,0,20,20);
-
-    const img = new Image();
-    img.src = canvas.toDataURL();
-    return img;
+    if (fillStyle) {
+        ctx.fillStyle = fillStyle;
+        ctx.fill();
+    }
+    if (strokeStyle) {
+        ctx.strokeStyle = strokeStyle;
+        ctx.stroke();
+    }
 }
 
-// Initialize block images
-colors.forEach((color, index) => {
-    if (color) {
-        blockImages[index] = createBlockImage(color);
-    }
-});
+function drawBlock(ctx, shape, offsetX, offsetY, scale = 1, alpha = 1) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(offsetX, offsetY);
+    ctx.scale(scale, scale);
 
-function drawMatrix(matrix, offset) {
-    matrix.forEach((row, y) => {
-        const absY = y + offset.y;
-        let isClearing = false;
+    const size = CELL_SIZE - 2; // Margin
 
-        if (matrix === arena && sweepRows.includes(absY)) {
-             isClearing = true;
-        }
+    shape.coords.forEach(coord => {
+        const x = coord[1] * CELL_SIZE + 1;
+        const y = coord[0] * CELL_SIZE + 1;
 
-        row.forEach((value, x) => {
-            if (value !== 0 && blockImages[value]) {
-                if (isClearing) {
-                    context.fillStyle = '#fff';
-                    context.fillRect(x + offset.x, y + offset.y, 1, 1);
-                } else {
-                    context.drawImage(blockImages[value], x + offset.x, y + offset.y, 1, 1);
-                }
+        // Draw main block
+        drawRoundedRect(ctx, x, y, size, size, 8, shape.color);
+
+        // Inner highlight/bevel
+        ctx.fillStyle = 'rgba(255,255,255,0.3)';
+        ctx.beginPath();
+        ctx.arc(x + 10, y + 10, 4, 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    ctx.restore();
+}
+
+function drawTray() {
+    trayCtxs.forEach((ctx, i) => {
+        ctx.clearRect(0, 0, 100, 100);
+        const block = trayBlocks[i];
+        if (block) {
+            // Center the block in the 100x100 canvas
+            // Calculate bounds
+            let minR = Infinity, maxR = -Infinity, minC = Infinity, maxC = -Infinity;
+            block.coords.forEach(([r, c]) => {
+                minR = Math.min(minR, r);
+                maxR = Math.max(maxR, r);
+                minC = Math.min(minC, c);
+                maxC = Math.max(maxC, c);
+            });
+
+            const blockW = (maxC - minC + 1) * CELL_SIZE;
+            const blockH = (maxR - minR + 1) * CELL_SIZE;
+
+            // Calculate scale to fit if too big
+            let scale = 1;
+            if (blockW > 90 || blockH > 90) {
+                scale = Math.min(90 / blockW, 90 / blockH);
             }
-        });
+
+            // Re-calc centered position
+            const drawW = blockW * scale;
+            const drawH = blockH * scale;
+
+            const offsetX = (100 - drawW) / 2 - (minC * CELL_SIZE * scale);
+            const offsetY = (100 - drawH) / 2 - (minR * CELL_SIZE * scale);
+
+            // Don't draw if dragging this specific block (unless we want a ghost in tray? usually no)
+            if (draggingBlock && draggingBlock.index === i) {
+                 ctx.globalAlpha = 0.3; // Show faint ghost in tray
+            } else {
+                 ctx.globalAlpha = 1;
+            }
+
+            drawBlock(ctx, block, offsetX, offsetY, scale);
+        }
     });
 }
 
-function drawNext() {
-    nextContext.fillStyle = '#000';
-    nextContext.fillRect(0, 0, nextCanvas.width, nextCanvas.height);
+function drawGrid() {
+    // Clear
+    ctx.fillStyle = BG_COLOR;
+    ctx.fillRect(0, 0, GRID_WIDTH, GRID_HEIGHT);
 
-    let yOffset = 1;
-    // Draw up to 4 pieces
-    for (let i = 0; i < Math.min(nextQueue.length, 4); i++) {
-        const piece = nextQueue[i];
-        const offset = {
-            x: (nextCanvas.width / 20 - piece[0].length) / 2,
-            y: yOffset
-        };
+    // Draw cells
+    for (let r = 0; r < GRID_SIZE; r++) {
+        for (let c = 0; c < GRID_SIZE; c++) {
+            const x = c * CELL_SIZE;
+            const y = r * CELL_SIZE;
 
-        piece.forEach((row, y) => {
-            row.forEach((value, x) => {
-                if (value !== 0 && blockImages[value]) {
-                    nextContext.drawImage(blockImages[value], x + offset.x, y + offset.y, 1, 1);
-                }
-            });
-        });
+            const val = grid[r][c];
 
-        // Move down for next piece (approx 4 units height + 1 padding)
-        yOffset += piece.length + 1;
-    }
-}
+            // Background slot
+            drawRoundedRect(ctx, x + 2, y + 2, CELL_SIZE - 4, CELL_SIZE - 4, 6, EMPTY_CELL_COLOR);
 
-function drawHold() {
-    holdContext.fillStyle = '#000';
-    holdContext.fillRect(0, 0, holdCanvas.width, holdCanvas.height);
-
-    if (holdPiece) {
-        const offset = {
-            x: (holdCanvas.width / 20 - holdPiece[0].length) / 2,
-            y: (holdCanvas.height / 20 - holdPiece.length) / 2
-        };
-
-        holdPiece.forEach((row, y) => {
-            row.forEach((value, x) => {
-                if (value !== 0 && blockImages[value]) {
-                    holdContext.drawImage(blockImages[value], x + offset.x, y + offset.y, 1, 1);
-                }
-            });
-        });
-    }
-}
-
-function draw() {
-    // Clear canvas to reveal CSS grid background
-    context.clearRect(0, 0, canvas.width, canvas.height);
-
-    drawMatrix(arena, {x: 0, y: 0});
-
-    // Draw Ghost Piece first
-    drawGhost();
-
-    drawMatrix(player.matrix, player.pos);
-    drawNext();
-    drawHold();
-}
-
-function merge(arena, player) {
-    player.matrix.forEach((row, y) => {
-        row.forEach((value, x) => {
-            if (value !== 0) {
-                arena[y + player.pos.y][x + player.pos.x] = value;
+            if (val !== 0) {
+                 // Filled block
+                 drawRoundedRect(ctx, x + 1, y + 1, CELL_SIZE - 2, CELL_SIZE - 2, 8, val);
+                 // Highlight
+                 ctx.fillStyle = 'rgba(255,255,255,0.3)';
+                 ctx.beginPath();
+                 ctx.arc(x + 10, y + 10, 4, 0, Math.PI * 2);
+                 ctx.fill();
             }
-        });
-    });
+        }
+    }
 }
 
-function rotate(matrix, dir) {
-    for (let y = 0; y < matrix.length; ++y) {
-        for (let x = 0; x < y; ++x) {
-            [
-                matrix[x][y],
-                matrix[y][x],
-            ] = [
-                matrix[y][x],
-                matrix[x][y],
-            ];
+function getGridPosFromMouse(mx, my) {
+    const rect = canvas.getBoundingClientRect();
+    const x = mx - rect.left;
+    const y = my - rect.top;
+
+    // Check if within bounds
+    if (x >= 0 && x <= GRID_WIDTH && y >= 0 && y <= GRID_HEIGHT) {
+        return {
+            c: Math.floor(x / CELL_SIZE),
+            r: Math.floor(y / CELL_SIZE),
+            rawX: x,
+            rawY: y
+        };
+    }
+    return null;
+}
+
+// Logic to check if block fits at specific grid row/col
+function canPlace(block, gridR, gridC) {
+    // We align the top-left (0,0) of the block definition to gridR, gridC
+    // Actually, dragging logic is usually: mouse is over a specific cell. Which cell of the block is the mouse over?
+    // Simplified: Mouse holds the center or top-left of the block.
+    // Better UX: Snap the block so that the cell under the mouse corresponds to the closest cell in the block shape.
+    // Let's assume the user grabs the block "generally". We map the top-left of the block to the grid cell.
+    // However, for drag-drop, we usually calculate an offset.
+
+    // With `draggingBlock`, we have `dragOffset`.
+    // Let's calculate the target top-left grid cell based on mouse position.
+
+    // But let's simplify: Use the visual top-left of the block.
+    // If draggingBlock is at screen (X,Y), and grid is at (GX, GY).
+    // The block's (0,0) cell is at (X, Y).
+    // The nearest grid cell to (X,Y) is the target (TR, TC).
+
+    for (const [r, c] of block.coords) {
+        const tr = gridR + r;
+        const tc = gridC + c;
+
+        if (tr < 0 || tr >= GRID_SIZE || tc < 0 || tc >= GRID_SIZE) return false;
+        if (grid[tr][tc] !== 0) return false;
+    }
+    return true;
+}
+
+function gameLoop() {
+    drawGrid();
+
+    // Draw Dragging Block
+    if (draggingBlock) {
+        // Highlight Drop Position?
+        const rect = canvas.getBoundingClientRect();
+        // Calculate where the top-left of the block is relative to the canvas
+        // Mouse is at mousePos.x, mousePos.y (client coords)
+        // Drag Offset is difference between Mouse and Top-Left of block canvas originally.
+        // We want to align nicely.
+
+        // Let's calculate the projected grid position.
+        // The block's (0,0) coord is at: mousePos.x + draggingBlock.visualOffsetX
+        // visualOffsetX needs to be determined at start of drag.
+
+        const blockX = mousePos.x + draggingBlock.visualOffsetX;
+        const blockY = mousePos.y + draggingBlock.visualOffsetY;
+
+        // Convert to canvas relative
+        const relX = blockX - rect.left;
+        const relY = blockY - rect.top;
+
+        // Calculate Grid Col/Row for the top-left (0,0) of the block
+        // We add CELL_SIZE/2 to snap to nearest center
+        const targetC = Math.round(relX / CELL_SIZE);
+        const targetR = Math.round(relY / CELL_SIZE);
+
+        // Store for drop logic
+        draggingBlock.targetR = targetR;
+        draggingBlock.targetC = targetC;
+
+        // Check validity
+        if (canPlace(draggingBlock.block, targetR, targetC)) {
+            // Draw Ghost/Shadow
+            ctx.save();
+            ctx.globalAlpha = 0.3;
+            draggingBlock.block.coords.forEach(([r, c]) => {
+                const x = (targetC + c) * CELL_SIZE;
+                const y = (targetR + r) * CELL_SIZE;
+                drawRoundedRect(ctx, x + 1, y + 1, CELL_SIZE - 2, CELL_SIZE - 2, 8, draggingBlock.block.color);
+            });
+            ctx.restore();
+        }
+
+        // Draw the actual block floating
+        // We draw it in a separate overlay or just on top of canvas?
+        // If it's outside canvas, canvas won't show it.
+        // So we need a global overlay or we rely on the fact that the user is hovering the grid.
+        // If the user drags outside the grid, we want to see it.
+        // Solution: Use a separate floating canvas or div for the drag representative.
+        // HTML5 DnD is clunky for this.
+        // Simplest: Just use a fixed position DIV that follows mouse, containing a canvas with the block.
+
+        // I will update the helper element position
+        const helper = document.getElementById('drag-helper');
+        if (helper) {
+            helper.style.transform = `translate(${mousePos.x}px, ${mousePos.y}px)`;
+            helper.style.display = 'block';
         }
     }
 
-    if (dir > 0) {
-        matrix.forEach(row => row.reverse());
-    } else {
-        matrix.reverse();
-    }
+    requestAnimationFrame(gameLoop);
 }
 
-function playerDrop() {
-    player.pos.y++;
-    if (collide(arena, player)) {
-        player.pos.y--;
-        merge(arena, player);
-        playerReset();
-        arenaSweep();
-        updateScore();
-    }
-    dropCounter = 0;
-}
+// Input Handling
+function handleStart(e, index) {
+    e.preventDefault();
+    const touch = e.touches ? e.touches[0] : e;
+    const block = trayBlocks[index];
+    if (!block) return;
 
-function playerHardDrop() {
-    while (!collide(arena, player)) {
-        player.pos.y++;
-    }
-    player.pos.y--;
-    merge(arena, player);
-    playerReset();
-    arenaSweep();
-    updateScore();
-    dropCounter = 0;
-}
+    // Calculate visual offset so the block doesn't snap its top-left to mouse
+    // We want the mouse to grab the block where it clicked.
+    // Tray canvas is 100x100.
+    const rect = trayCanvases[index].getBoundingClientRect();
+    const clickX = touch.clientX - rect.left;
+    const clickY = touch.clientY - rect.top;
 
-function playerMove(offset) {
-    player.pos.x += offset;
-    if (collide(arena, player)) {
-        player.pos.x -= offset;
-    }
-}
+    // Find block bounds again to know where it is drawn in the tray
+    let minR = Infinity, maxR = -Infinity, minC = Infinity, maxC = -Infinity;
+    block.coords.forEach(([r, c]) => {
+        minR = Math.min(minR, r);
+        maxR = Math.max(maxR, r);
+        minC = Math.min(minC, c);
+        maxC = Math.max(maxC, c);
+    });
+    const blockW = (maxC - minC + 1) * CELL_SIZE;
+    const blockH = (maxR - minR + 1) * CELL_SIZE;
+    let scale = 1;
+    if (blockW > 90 || blockH > 90) scale = Math.min(90 / blockW, 90 / blockH);
 
-let nextQueue = [];
-let holdPiece = null;
-let canHold = true;
-let showGhost = true;
-let mobileControlsMode = false;
+    const drawW = blockW * scale;
+    const drawH = blockH * scale;
+    const offsetX = (100 - drawW) / 2 - (minC * CELL_SIZE * scale);
+    const offsetY = (100 - drawH) / 2 - (minR * CELL_SIZE * scale);
 
-function toggleControlsMode() {
-    mobileControlsMode = !mobileControlsMode;
-    const btn = document.getElementById('controls-mode-btn');
-    const controlsDiv = document.getElementById('mobile-controls');
+    // The drawn block (0,0) is at (offsetX, offsetY) inside the tray canvas.
+    // And scaled by `scale`.
+    // We want to render the dragged block at 1.0 scale (actual size).
+    // So we need to position the helper such that the mouse is relative to the block anchor similarly.
 
-    if (mobileControlsMode) {
-        btn.innerText = "Controls: Mobile";
-        controlsDiv.classList.remove('hidden');
-    } else {
-        btn.innerText = "Controls: PC";
-        controlsDiv.classList.add('hidden');
-    }
-}
+    // If I clicked at (cx, cy) in tray.
+    // The relative pos to block origin (scaled) is (cx - offsetX, cy - offsetY).
+    // In unscaled units: (cx - offsetX)/scale.
 
-function toggleControlsHelp() {
-    const list = document.getElementById('controls-list');
-    const arrow = document.getElementById('ctrl-arrow');
-    // Logic: if hidden, show it (remove hidden).
-    // Initial state in HTML: no hidden class.
-    // If we want to toggle:
-    if (list.classList.contains('hidden')) {
-        list.classList.remove('hidden');
-        arrow.innerText = '▼';
-    } else {
-        list.classList.add('hidden');
-        arrow.innerText = '▲';
-    }
-}
+    // So the visual offset for the dragging block (1.0 scale) should be:
+    // -1 * (cx - offsetX) / scale
 
-// Mobile Controls Event Listeners
-const mobileBtnMap = {
-    'btn-left': () => { playerMove(-1); playSound('move'); },
-    'btn-right': () => { playerMove(1); playSound('move'); },
-    'btn-down': () => { playerDrop(); },
-    'btn-rotate': () => { playerRotate(1); playSound('rotate'); },
-    'btn-hard-drop': () => { playerHardDrop(); playSound('drop'); },
-    'btn-hold': () => { playerHold(); }
-};
+    const visualOffsetX = -1 * (clickX - offsetX) / scale;
+    const visualOffsetY = -1 * (clickY - offsetY) / scale;
 
-Object.keys(mobileBtnMap).forEach(id => {
-    const btn = document.getElementById(id);
-    if (btn) {
-        // Prevent default to stop scrolling/zooming on double tap
-        const handleInput = (e) => {
-            if (e.cancelable) e.preventDefault();
-            if (!isGameActive || isSweeping) return;
-            mobileBtnMap[id]();
-        };
-
-        btn.addEventListener('touchstart', handleInput, {passive: false});
-        btn.addEventListener('mousedown', handleInput);
-    }
-});
-
-function toggleGhost() {
-    showGhost = !showGhost;
-    const btn = document.getElementById('ghost-btn');
-    if (btn) btn.innerText = showGhost ? "Ghost: ON" : "Ghost: OFF";
-    draw();
-}
-
-function drawGhost() {
-    if (!showGhost || !player.matrix) return;
-
-    // Create a ghost player object
-    const ghost = {
-        matrix: player.matrix,
-        pos: { x: player.pos.x, y: player.pos.y }
+    draggingBlock = {
+        index: index,
+        block: block,
+        visualOffsetX: visualOffsetX,
+        visualOffsetY: visualOffsetY
     };
 
-    // Drop until collision
-    while (!collide(arena, ghost)) {
-        ghost.pos.y++;
+    // Create/Update Drag Helper
+    let helper = document.getElementById('drag-helper');
+    if (!helper) {
+        helper = document.createElement('canvas');
+        helper.id = 'drag-helper';
+        helper.style.position = 'fixed';
+        helper.style.pointerEvents = 'none';
+        helper.style.zIndex = '9999';
+        helper.style.top = '0';
+        helper.style.left = '0';
+        document.body.appendChild(helper);
     }
-    ghost.pos.y--; // Step back one step (to valid position)
 
-    // Render with transparency
-    context.save();
-    context.globalAlpha = 0.2;
-    drawMatrix(ghost.matrix, ghost.pos);
-    context.restore();
+    // Helper size should be bounding box of block at scale 1
+    // But simplest is to make it big enough
+    const size = 5 * CELL_SIZE;
+    helper.width = size;
+    helper.height = size;
+    const hCtx = helper.getContext('2d');
+    hCtx.clearRect(0, 0, size, size);
+
+    // Draw block at (0,0) + offset? No, we transform the DIV.
+    // The DIV is at mouse position.
+    // Inside the DIV, we want the block to be offset by visualOffsetX.
+    // So if visualOffsetX is -20, we draw at -20? No canvas cuts off.
+
+    // Better strategy:
+    // Place DIV at (0,0). Transform translate(mousePos.x, mousePos.y).
+    // Inside Canvas, draw block at (visualOffsetX, visualOffsetY).
+    // Note: visualOffsetX is negative usually.
+    // We center the "grab point" in the helper canvas?
+
+    // Let's make helper canvas centered on mouse.
+    helper.style.marginLeft = `${visualOffsetX}px`;
+    helper.style.marginTop = `${visualOffsetY}px`;
+
+    drawBlock(hCtx, block, 0, 0, 1, 0.9);
+
+    mousePos.x = touch.clientX;
+    mousePos.y = touch.clientY;
+
+    drawTray(); // Update tray (ghost)
 }
 
-function playerReset() {
-    const pieces = 'ILJOTSZ';
-    // Initialize queue if empty
-    while (nextQueue.length < 4) {
-        nextQueue.push(createPiece(pieces[pieces.length * Math.random() | 0]));
+function handleMove(e) {
+    if (!draggingBlock) return;
+    e.preventDefault();
+    const touch = e.touches ? e.touches[0] : e;
+    mousePos.x = touch.clientX;
+    mousePos.y = touch.clientY;
+}
+
+function handleEnd(e) {
+    if (!draggingBlock) return;
+    e.preventDefault();
+
+    const { block, targetR, targetC, index } = draggingBlock;
+
+    if (targetR !== undefined && canPlace(block, targetR, targetC)) {
+        placeBlock(block, targetR, targetC);
+        trayBlocks[index] = null;
+
+        // Check refill
+        if (trayBlocks.every(b => b === null)) {
+            spawnBlocks();
+        } else {
+            // Check game over only if not refilling (refill checks it)
+            checkGameOver();
+        }
+    } else {
+        // Failed drop - sound? animation?
     }
 
-    player.matrix = nextQueue.shift();
-    nextQueue.push(createPiece(pieces[pieces.length * Math.random() | 0]));
+    draggingBlock = null;
+    const helper = document.getElementById('drag-helper');
+    if (helper) helper.remove();
 
-    player.pos.y = 0;
-    player.pos.x = (arena[0].length / 2 | 0) -
-                   (player.matrix[0].length / 2 | 0);
+    drawTray();
+    drawGrid(); // Clear shadows
+}
 
-    canHold = true; // Reset hold ability for new turn
-    drawNext();
-    drawHold();
+function placeBlock(block, r, c) {
+    // Place
+    block.coords.forEach(([br, bc]) => {
+        grid[r + br][c + bc] = block.color;
+    });
 
-    if (collide(arena, player)) {
+    score += block.coords.length;
+
+    // Check Lines
+    checkLines();
+    updateScoreUI();
+}
+
+function checkLines() {
+    let linesCleared = 0;
+    const rowsToClear = [];
+    const colsToClear = [];
+
+    // Check Rows
+    for (let r = 0; r < GRID_SIZE; r++) {
+        if (grid[r].every(cell => cell !== 0)) {
+            rowsToClear.push(r);
+        }
+    }
+
+    // Check Cols
+    for (let c = 0; c < GRID_SIZE; c++) {
+        let full = true;
+        for (let r = 0; r < GRID_SIZE; r++) {
+            if (grid[r][c] === 0) {
+                full = false;
+                break;
+            }
+        }
+        if (full) colsToClear.push(c);
+    }
+
+    if (rowsToClear.length > 0 || colsToClear.length > 0) {
+        // Clear
+        // For simplicity immediately. Optional: animation.
+
+        rowsToClear.forEach(r => {
+            for (let c = 0; c < GRID_SIZE; c++) grid[r][c] = 0;
+        });
+
+        colsToClear.forEach(c => {
+            for (let r = 0; r < GRID_SIZE; r++) grid[r][c] = 0;
+        });
+
+        // Bonus for multiple lines
+        const totalLines = rowsToClear.length + colsToClear.length;
+        // Formula: 10 points per line, plus bonus?
+        // Basic: 10 * lines * lines?
+        score += totalLines * 10 * totalLines;
+    }
+}
+
+function checkGameOver() {
+    // For each available block in tray, check if it can fit ANYWHERE
+    let possible = false;
+
+    // If tray is empty, it's not game over (it refills).
+    // But we call this after refill or after drop.
+
+    // If all are null, we don't check (refill happens).
+    const activeBlocks = trayBlocks.filter(b => b !== null);
+    if (activeBlocks.length === 0) return; // Should have refilled
+
+    for (const block of activeBlocks) {
+        for (let r = 0; r < GRID_SIZE; r++) {
+            for (let c = 0; c < GRID_SIZE; c++) {
+                if (canPlace(block, r, c)) {
+                    possible = true;
+                    break;
+                }
+            }
+            if (possible) break;
+        }
+        if (possible) break;
+    }
+
+    if (!possible) {
         gameOver();
     }
 }
 
-function playerHold() {
-    if (!canHold || isGameOver) return;
-
-    if (holdPiece) {
-        // Swap
-        const temp = player.matrix;
-        player.matrix = holdPiece;
-        holdPiece = temp;
-        player.pos.y = 0;
-        player.pos.x = (arena[0].length / 2 | 0) - (player.matrix[0].length / 2 | 0);
-    } else {
-        // First hold
-        holdPiece = player.matrix;
-        playerReset(); // Get next piece from queue
-        // playerReset resets canHold to true, but we consumed our hold action for this "turn"
-        // (which is actually the turn of the piece we just grabbed).
-        // Logic: if I hold, I get a new piece. Can I hold that new piece immediately? Usually no.
-    }
-
-    canHold = false;
-    drawHold();
-    drawNext(); // Reset calls it but good to be safe
-}
-
-let animationId;
-let isGameOver = false;
-
 function gameOver() {
-    isGameOver = true;
-    stopTimer();
-    playSound('gameover');
-    if (animationId) cancelAnimationFrame(animationId);
-    document.getElementById('game-over').classList.remove('hidden');
-
-    // Clear held piece on game over
-    holdPiece = null;
-    drawHold();
+    finalScoreEl.innerText = score;
+    gameOverOverlay.classList.remove('hidden');
+    trayBlocks = [null, null, null]; // Disable interaction
 }
 
-function resetGame() {
-    isGameOver = false;
-    arena.forEach(row => row.fill(0));
-    player.score = 0;
-    player.lines = 0;
-    updateScore();
-    updateLines();
-    document.getElementById('game-over').classList.add('hidden');
-    playerReset(); // Reset piece again to be safe
-    update();
-    startTimer();
-}
-
-function playerRotate(dir) {
-    const pos = player.pos.x;
-    let offset = 1;
-    rotate(player.matrix, dir);
-    while (collide(arena, player)) {
-        player.pos.x += offset;
-        offset = -(offset + (offset > 0 ? 1 : -1));
-        if (offset > player.matrix[0].length) {
-            rotate(player.matrix, -dir);
-            player.pos.x = pos;
-            return;
-        }
-    }
-}
-
-let dropCounter = 0;
-let dropInterval = 1000;
-
-let lastTime = 0;
-function update(time = 0) {
-    if (isGameOver) return;
-
-    const deltaTime = time - lastTime;
-    lastTime = time;
-
-    if (!isSweeping) {
-        dropCounter += deltaTime;
-        if (dropCounter > dropInterval) {
-            playerDrop();
-        }
-    }
-
-    draw();
-    animationId = requestAnimationFrame(update);
-}
-
-function updateScore() {
-    document.getElementById('score').innerText = player.score;
-}
-
-const arena = createMatrix(12, 20);
-
-const player = {
-    pos: {x: 0, y: 0},
-    matrix: null,
-    score: 0,
-    lines: 0,
-};
-
-
-
-// Audio System
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-const gainNode = audioCtx.createGain();
-gainNode.gain.value = 0.5; // Master volume (Increased)
-gainNode.connect(audioCtx.destination);
-
-// Auto-play logic
-let isMuted = false; // Default to unmuted per request
-
-function tryStartAudio() {
-    if (audioCtx.state === 'suspended') {
-        audioCtx.resume().then(() => {
-            console.log("AudioContext resumed successfully");
-        }).catch(e => console.error(e));
-    }
-}
-
-// Global listener to ensure audio starts on first interaction if blocked
-['click', 'keydown'].forEach(event => {
-    document.addEventListener(event, () => {
-        tryStartAudio();
-    }, { once: false }); // Keep trying or just once? Once is usually enough but state might toggle.
-});
-// Actually, let's just make it persistent but check state.
-
-// Sound Effects
-function playSound(type) {
-    if (isMuted) return;
-    if (audioCtx.state === 'suspended') tryStartAudio();
-
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-
-    osc.connect(gain);
-    gain.connect(audioCtx.destination); // Bypass master gain for SFX to be clearer or use master
-
-    const now = audioCtx.currentTime;
-
-    if (type === 'move') {
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(300, now);
-        gain.gain.setValueAtTime(0.05, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
-        osc.start(now);
-        osc.stop(now + 0.1);
-    } else if (type === 'rotate') {
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(400, now);
-        gain.gain.setValueAtTime(0.05, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
-        osc.start(now);
-        osc.stop(now + 0.1);
-    } else if (type === 'drop') {
-        osc.type = 'square';
-        osc.frequency.setValueAtTime(150, now);
-        gain.gain.setValueAtTime(0.05, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
-        osc.start(now);
-        osc.stop(now + 0.15);
-    } else if (type === 'clear') {
-        // Cooler clear sound: Swipe up with noise
-        osc.type = 'triangle'; // Cleaner base
-        osc.frequency.setValueAtTime(400, now);
-        osc.frequency.exponentialRampToValueAtTime(1000, now + 0.2);
-
-        gain.gain.setValueAtTime(0.1, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
-
-        osc.start(now);
-        osc.stop(now + 0.3);
-
-        // Add a secondary sparkly noise layer
-        const noiseOsc = audioCtx.createOscillator();
-        const noiseGain = audioCtx.createGain();
-        noiseOsc.type = 'sawtooth';
-        noiseOsc.frequency.setValueAtTime(800, now);
-        noiseOsc.frequency.exponentialRampToValueAtTime(2000, now + 0.1);
-
-        noiseOsc.connect(noiseGain);
-        noiseGain.connect(gainNode);
-
-        noiseGain.gain.setValueAtTime(0.05, now);
-        noiseGain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
-
-        noiseOsc.start(now);
-        noiseOsc.stop(now + 0.15);
-    } else if (type === 'gameover') {
-        osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(200, now);
-        osc.frequency.exponentialRampToValueAtTime(50, now + 1.0);
-
-        gain.gain.setValueAtTime(0.2, now);
-        gain.gain.linearRampToValueAtTime(0, now + 1.0);
-
-        osc.start(now);
-        osc.stop(now + 1.0);
-    }
-}
-
-// Simple sequencer for Tetris Theme (Korobeiniki)
-let themeInterval = null;
-let noteIndex = 0;
-// Simplified melody: Note (Hz), Duration (beats)
-// A4=440
-// E5-B4-C5-D5-C5-B4-A4-A4-C5-E5-D5-C5-B4-C5-D5-E5-C5-A4-A4
-// Tempo roughly 150 BPM
-const melody = [
-    {f: 659.25, d: 4}, // E5
-    {f: 493.88, d: 2}, // B4
-    {f: 523.25, d: 2}, // C5
-    {f: 587.33, d: 4}, // D5
-    {f: 523.25, d: 2}, // C5
-    {f: 493.88, d: 2}, // B4
-    {f: 440.00, d: 4}, // A4
-    {f: 440.00, d: 2}, // A4
-    {f: 523.25, d: 2}, // C5
-    {f: 659.25, d: 4}, // E5
-    {f: 587.33, d: 2}, // D5
-    {f: 523.25, d: 2}, // C5
-    {f: 493.88, d: 4}, // B4
-    {f: 523.25, d: 2}, // C5
-    {f: 587.33, d: 4}, // D5
-    {f: 659.25, d: 4}, // E5
-    {f: 523.25, d: 4}, // C5
-    {f: 440.00, d: 4}, // A4
-    {f: 440.00, d: 4}, // A4
-    {f: 0, d: 4}       // Rest
-];
-
-function playTheme() {
-    if (themeInterval) clearInterval(themeInterval);
-    // noteIndex = 0; // Don't reset index if called repeatedly, but here we might want to.
-
-    let tempo = 150; // BPM
-
-    function playNextNote() {
-        if (isMuted) return;
-        const note = melody[noteIndex];
-        const duration = note.d * (60 / tempo) * 1000 * 0.5; // Scale to taste
-
-        if (note.f > 0) {
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.type = 'square';
-            osc.frequency.value = note.f;
-            osc.connect(gain);
-            gain.connect(gainNode); // Use master gain
-
-            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration / 1000);
-
-            osc.start();
-            osc.stop(audioCtx.currentTime + duration / 1000);
-        }
-
-        noteIndex = (noteIndex + 1) % melody.length;
-        themeInterval = setTimeout(playNextNote, duration);
-    }
-
-    playNextNote();
-}
-
-function stopTheme() {
-    clearTimeout(themeInterval);
-}
-
-// Intro Animation Logic
-let hasStarted = false;
-let isGameActive = false;
-
-function startSequence() {
-    if (hasStarted) return;
-    hasStarted = true;
-
-    // Resume Audio Context
-    if (audioCtx.state === 'suspended') {
-        audioCtx.resume();
-    }
-    playTheme();
-
-    const introOverlay = document.getElementById('intro-overlay');
-    const introLogo = document.getElementById('intro-logo');
-    const startPrompt = document.getElementById('start-prompt');
-    const gameTitle = document.getElementById('game-title');
-
-    // 1. Hide Prompt, Show Logo
-    startPrompt.style.display = 'none';
-    introLogo.classList.remove('hidden');
-
-    // 2. Wait 1.5s (Music playing, Logo visible)
-    setTimeout(() => {
-        // 3. Transition: Fade out overlay background, fade out logo, fade in title
-        introOverlay.style.background = 'transparent';
-        introLogo.classList.add('logo-hidden');
-        gameTitle.style.transition = 'opacity 1s ease-in-out';
-        gameTitle.style.opacity = '1';
-
-        // Reset player and start game loop here so it feels like a fresh start
-        isGameActive = true;
-        playerReset();
-        update();
-        startTimer();
-
-        // Remove overlay from DOM interaction after transition
-        setTimeout(() => {
-            introOverlay.style.display = 'none';
-        }, 1000);
-
-    }, 1500);
-}
-
-// Wait for user interaction to start the sequence
-['click', 'keydown'].forEach(event => {
-    document.addEventListener(event, startSequence);
+// Event Listeners
+trayCanvases.forEach((c, i) => {
+    c.addEventListener('mousedown', (e) => handleStart(e, i));
+    c.addEventListener('touchstart', (e) => handleStart(e, i), { passive: false });
 });
 
+window.addEventListener('mousemove', handleMove);
+window.addEventListener('touchmove', handleMove, { passive: false });
 
-document.addEventListener('keydown', event => {
-    if (!isGameActive || isSweeping) return;
+window.addEventListener('mouseup', handleEnd);
+window.addEventListener('touchend', handleEnd);
 
-    if (event.keyCode === 37) {
-        playerMove(-1);
-        playSound('move');
-    } else if (event.keyCode === 39) {
-        playerMove(1);
-        playSound('move');
-    } else if (event.keyCode === 40) {
-        playerDrop();
-    } else if (event.keyCode === 81) {
-        playerRotate(-1);
-        playSound('rotate');
-    } else if (event.keyCode === 87 || event.keyCode === 38) {
-        playerRotate(1);
-        playSound('rotate');
-    } else if (event.keyCode === 32 || event.keyCode === 13) {
-        playerHardDrop();
-        playSound('drop');
-    } else if (event.keyCode === 16 || event.keyCode === 67) { // Shift or C
-        playerHold();
-    }
-});
+restartBtn.addEventListener('click', init);
 
-playerReset();
-updateScore();
-// update(); // Don't start update loop immediately, wait for startSequence
+// Start
+init();
